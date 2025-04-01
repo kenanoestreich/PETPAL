@@ -45,7 +45,7 @@ def stitch_broken_scans(initial_image_path: str,
     (a 'broken scan'), recomputes decay corrections for all subsequent images using the correct TimeZero (TimeZero for
     the first image), then concatenates all the frames into a single 4D image.
 
-    Important: All noninitial images must be registered to the first image prior to calling this function.
+    Important: All subsequent images must be registered to the initial image prior to calling this function.
 
     Args:
         initial_image_path (str): Path to the initial image captured during the PET session. 'TimeZero' from this
@@ -84,30 +84,30 @@ def stitch_broken_scans(initial_image_path: str,
     placeholder_date = datetime.date.today()
     initial_scan_datetime = datetime.datetime.combine(date=placeholder_date,
                                                       time=initial_scan_time)
+
     subsequent_scan_times = [datetime.time.fromisoformat(t) for t in subsequent_time_zeroes]
-    noninitial_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
+    subsequent_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
                                  for scan_time in subsequent_scan_times]
 
-    times_since_timezero = [t - initial_scan_datetime for t in noninitial_scan_datetimes]
+    subsequent_time_deltas = [t - initial_scan_datetime for t in subsequent_scan_datetimes]
 
-    for t_d, additional_image_metadata in zip(times_since_timezero,subsequent_metadata):
-        original_frame_times_start = additional_image_metadata['FrameTimesStart']
-        additional_image_metadata['FrameTimesStart'] = [t+t_d.total_seconds() for t in original_frame_times_start]
-        additional_image_metadata['TimeZero'] = true_time_zero
+    for time_delta, metadata in zip(subsequent_time_deltas,subsequent_metadata):
+        metadata['FrameTimesStart'] = [t+time_delta.total_seconds() for t in metadata['FrameTimesStart']]
+        metadata['TimeZero'] = true_time_zero
 
     corrected_arrays = [initial_arr]
     new_metadata = initial_metadata
 
-    for additional_image_path, metadata in zip(subsequent_image_paths, subsequent_metadata):
+    for path, metadata in zip(subsequent_image_paths, subsequent_metadata):
 
-        original_path = pathlib.Path(additional_image_path)
+        original_path = pathlib.Path(path)
         original_stem = original_path.stem
         split_stem = original_stem.split("_")
         split_stem.insert(-1, "desc-nodecaycorrect")
         new_stem = "_".join(split_stem)
         new_path = str(original_path).replace(original_stem, new_stem)
 
-        undo_decay_correction(input_image_path=additional_image_path,
+        undo_decay_correction(input_image_path=path,
                               output_image_path=new_path,
                               metadata_dict=metadata)
 
