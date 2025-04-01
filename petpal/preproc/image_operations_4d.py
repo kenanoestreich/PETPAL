@@ -37,59 +37,68 @@ from ..preproc.decay_correction import undo_decay_correction, decay_correct
 
 def stitch_broken_scans(initial_image_path: str,
                         output_image_path: str | None,
-                        subsequent_image_paths: list[str]) -> ants.ANTsImage:
+                        subsequent_image_paths: str | list[str]) -> ants.ANTsImage:
     """
     'Stitch' together 2 or more images from one PET session into a single image, recalculating decay correction.
 
-    This function takes multiple images (4D) from a single PET session in which the scan had to pause in the middle (a
-    'broken scan'), recomputes decay corrections for all noninitial images using the correct TimeZero (TimeZero for the
-    first image), then combines all the data into a single image.
+    This function takes multiple 4D images from a single PET session in which the scanning had to pause in the middle
+    (a 'broken scan'), recomputes decay corrections for all subsequent images using the correct TimeZero (TimeZero for
+    the first image), then concatenates all the frames into a single 4D image.
 
     Important: All noninitial images must be registered to the first image prior to calling this function.
 
     Args:
-        initial_image_path (str): Path to the initial image captured during PET session. 'TimeZero' from this image will be considered
-            as the true value to correct the rest of the images to.
-        output_image_path (str): Path to which the stitched image will be written. If None, no file will be written.
-        subsequent_image_paths (list[str]): Path(s) to 1 or more additional images containing data from broken sections
-            of the PET session. Note that all images must be registered to the first (input_image_path).
+        initial_image_path (str): Path to the initial image captured during the PET session. 'TimeZero' from this
+            image's metadata will be considered the true value to correct the rest of the images to.
+        output_image_path (str): Path (including filename) to save the stitched image to. If None, no file will be
+            written.
+        subsequent_image_paths (str | list[str]): Path(s) to 1 or more subsequent images obtained in the same PET
+            session. If passing a list (multiple subsequent images), the order of the paths **MUST** be reflect the
+            timing of the scans captured. For example, the first path in the list must correspond to the second section
+            of the PET session, the second path to the third section, and so on. Passing a string indicates there is
+            only one subsequent scan to stitch to the first. **Note that all images must be registered to the first
+            (initial_image_path).**
 
     Returns:
         ants.ANTsImage: stitched image
     """
 
-    initial_image = ants.image_read(filename=initial_image_path)
-    initial_image_data = initial_image.numpy()
-    initial_image_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=initial_image_path)
-    noninitial_image_metadata_dicts = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
-                                       for path in subsequent_image_paths]
+    initial_img = ants.image_read(filename=initial_image_path)
+    initial_arr = initial_img.numpy()
+    initial_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=initial_image_path)
+
+    if isinstance(subsequent_image_paths, str):
+        subsequent_image_paths = [subsequent_image_paths]
+
+    subsequent_metadata = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
+                           for path in subsequent_image_paths]
 
     try:
-        noninitial_time_zeroes = [meta['TimeZero'] for meta in noninitial_image_metadata_dicts]
-        actual_time_zero = initial_image_metadata['TimeZero']
+        subsequent_time_zeroes = [meta['TimeZero'] for meta in subsequent_metadata]
+        true_time_zero = initial_metadata['TimeZero']
     except KeyError:
         raise KeyError(f'.json sidecar for one of your input images does not contain required BIDS key "TimeZero". '
                        f'Aborting...')
 
-    initial_scan_time = datetime.time.fromisoformat(actual_time_zero)
+    initial_scan_time = datetime.time.fromisoformat(true_time_zero)
     placeholder_date = datetime.date.today()
     initial_scan_datetime = datetime.datetime.combine(date=placeholder_date,
                                                       time=initial_scan_time)
-    noninitial_scan_times = [datetime.time.fromisoformat(t) for t in noninitial_time_zeroes]
+    subsequent_scan_times = [datetime.time.fromisoformat(t) for t in subsequent_time_zeroes]
     noninitial_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
-                                 for scan_time in noninitial_scan_times]
+                                 for scan_time in subsequent_scan_times]
 
     times_since_timezero = [t - initial_scan_datetime for t in noninitial_scan_datetimes]
 
-    for t_d, additional_image_metadata in zip(times_since_timezero,noninitial_image_metadata_dicts):
+    for t_d, additional_image_metadata in zip(times_since_timezero,subsequent_metadata):
         original_frame_times_start = additional_image_metadata['FrameTimesStart']
         additional_image_metadata['FrameTimesStart'] = [t+t_d.total_seconds() for t in original_frame_times_start]
-        additional_image_metadata['TimeZero'] = actual_time_zero
+        additional_image_metadata['TimeZero'] = true_time_zero
 
-    corrected_arrays = [initial_image_data]
-    new_metadata = initial_image_metadata
+    corrected_arrays = [initial_arr]
+    new_metadata = initial_metadata
 
-    for additional_image_path, metadata in zip(subsequent_image_paths, noninitial_image_metadata_dicts):
+    for additional_image_path, metadata in zip(subsequent_image_paths, subsequent_metadata):
 
         original_path = pathlib.Path(additional_image_path)
         original_stem = original_path.stem
@@ -118,9 +127,9 @@ def stitch_broken_scans(initial_image_path: str,
     stitched_image_array = np.concatenate(corrected_arrays, axis=3)
 
     stitched_image = ants.from_numpy(data=stitched_image_array,
-                                     origin=initial_image.origin,
-                                     spacing=initial_image.spacing,
-                                     direction=initial_image.direction)
+                                     origin=initial_img.origin,
+                                     spacing=initial_img.spacing,
+                                     direction=initial_img.direction)
 
     if output_image_path is not None:
         ants.image_write(image=stitched_image,
