@@ -35,35 +35,34 @@ from ..utils.useful_functions import weighted_series_sum, check_physical_space_f
 from ..utils import image_io, math_lib
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
 
-def stitch_broken_scans(input_image_path: str,
-                        output_image_path: str,
-                        noninitial_image_paths: list[str]) -> ants.ANTsImage:
+def stitch_broken_scans(initial_image_path: str,
+                        output_image_path: str | None,
+                        subsequent_image_paths: list[str]) -> ants.ANTsImage:
     """
-    'Stitch' together 2 or more images from one session into a single image.
+    'Stitch' together 2 or more images from one PET session into a single image, recalculating decay correction.
 
     This function takes multiple images (4D) from a single PET session in which the scan had to pause in the middle (a
     'broken scan'), recomputes decay corrections for all noninitial images using the correct TimeZero (TimeZero for the
-    first image), then combines all the data into a single file to write (unless output_image_path is None, in which
-    case the function will pass the ANTsImage object.
+    first image), then combines all the data into a single image.
 
     Important: All noninitial images must be registered to the first image prior to calling this function.
 
     Args:
-        input_image_path (str): Path to the initial image captured during PET session. 'TimeZero' from this image will be considered
+        initial_image_path (str): Path to the initial image captured during PET session. 'TimeZero' from this image will be considered
             as the true value to correct the rest of the images to.
         output_image_path (str): Path to which the stitched image will be written. If None, no file will be written.
-        noninitial_image_paths (list[str]): Path(s) to 1 or more additional images containing data from broken sections
+        subsequent_image_paths (list[str]): Path(s) to 1 or more additional images containing data from broken sections
             of the PET session. Note that all images must be registered to the first (input_image_path).
 
     Returns:
         ants.ANTsImage: stitched image
     """
 
-    initial_image = ants.image_read(filename=input_image_path)
+    initial_image = ants.image_read(filename=initial_image_path)
     initial_image_data = initial_image.numpy()
-    initial_image_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=input_image_path)
+    initial_image_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=initial_image_path)
     noninitial_image_metadata_dicts = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
-                                       for path in noninitial_image_paths]
+                                       for path in subsequent_image_paths]
 
     try:
         noninitial_time_zeroes = [meta['TimeZero'] for meta in noninitial_image_metadata_dicts]
@@ -90,7 +89,7 @@ def stitch_broken_scans(input_image_path: str,
     corrected_arrays = [initial_image_data]
     new_metadata = initial_image_metadata
 
-    for additional_image_path, metadata in zip(noninitial_image_paths,noninitial_image_metadata_dicts):
+    for additional_image_path, metadata in zip(subsequent_image_paths, noninitial_image_metadata_dicts):
 
         original_path = pathlib.Path(additional_image_path)
         original_stem = original_path.stem
