@@ -12,7 +12,7 @@ from bids_validator import BIDSValidator
 def add_description_to_bids_path(filepath: str,
                                  description: str) -> str:
     """
-    Create a copy of a bids filepath string with a description inserted before the suffix as 'desc-[description]'.
+    Create a copy of a bids filepath string with a description entity inserted before the suffix.
 
     See Also:
         `Brain Imaging Data Structure (BIDS) <https://bids.neuroimaging.io/>`_

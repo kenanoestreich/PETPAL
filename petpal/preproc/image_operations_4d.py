@@ -33,11 +33,12 @@ from scipy.ndimage import center_of_mass
 
 from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
 from ..utils import image_io, math_lib
+from ..utils.bids_utils import add_description_to_bids_path
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
 
 def stitch_broken_scans(initial_image_path: str,
                         output_image_path: str | None,
-                        subsequent_image_paths: str | list[str]) -> ants.ANTsImage:
+                        subsequent_image_paths: str | list[str]) -> (ants.ANTsImage, dict):
     """
     'Stitch' together 2 or more images from one PET session into a single image, recalculating decay correction.
 
@@ -96,37 +97,39 @@ def stitch_broken_scans(initial_image_path: str,
         metadata['TimeZero'] = true_time_zero
 
     corrected_arrays = [initial_arr]
-    new_metadata = initial_metadata
+    json_data = initial_metadata
 
     for path, metadata in zip(subsequent_image_paths, subsequent_metadata):
 
-        original_path = pathlib.Path(path)
-        original_stem = original_path.stem
-        split_stem = original_stem.split("_")
-        split_stem.insert(-1, "desc-nodecaycorrect")
-        new_stem = "_".join(split_stem)
-        new_path = str(original_path).replace(original_stem, new_stem)
+        if output_image_path is not None:
+            uncorrected_img_path = add_description_to_bids_path(filepath=path,
+                                                                description="NoDecayCorrection")
+        else: uncorrected_img_path = None
 
-        undo_decay_correction(input_image_path=path,
-                              output_image_path=new_path,
-                              metadata_dict=metadata)
+        uncorrected_img, uncorrected_metadata = undo_decay_correction(input_image_path=path,
+                                                                      output_image_path=uncorrected_img_path,
+                                                                      metadata_dict=metadata)
 
-        corrected_image_path = new_path.replace("desc-nodecaycorrect", "desc-decayredone")
-        corrected_image = decay_correct(input_image_path=new_path,
-                                        output_image_path=corrected_image_path)
+        if output_image_path is not None:
+            corrected_img_path = add_description_to_bids_path(filepath=path,
+                                                              description="DecayCorrected")
+        else: corrected_img_path = None
 
-        corrected_arrays.append(corrected_image.numpy())
-        updated_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=corrected_image_path)
-        new_metadata['FrameTimesStart'].extend(updated_metadata['FrameTimesStart'])
-        new_metadata['FrameReferenceTime'].extend(updated_metadata['FrameReferenceTime'])
-        new_metadata['FrameDuration'].extend(updated_metadata['FrameDuration'])
-        new_metadata['DecayFactor'].extend(updated_metadata['DecayFactor'])
-        new_metadata['ImageDecayCorrected'] = updated_metadata['ImageDecayCorrected']
-        new_metadata['ImageDecayCorrectionTime'] = updated_metadata['ImageDecayCorrectionTime']
+        decay_corrected_img, decay_corrected_metadata = decay_correct(input_image_path=uncorrected_img_path,
+                                                                      output_image_path=corrected_img_path,
+                                                                      metadata_dict=uncorrected_metadata)
 
-    stitched_image_array = np.concatenate(corrected_arrays, axis=3)
+        corrected_arrays.append(decay_corrected_img.numpy())
+        json_data['FrameTimesStart'].extend(decay_corrected_metadata['FrameTimesStart'])
+        json_data['FrameReferenceTime'].extend(decay_corrected_metadata['FrameReferenceTime'])
+        json_data['FrameDuration'].extend(decay_corrected_metadata['FrameDuration'])
+        json_data['DecayFactor'].extend(decay_corrected_metadata['DecayFactor'])
+        json_data['ImageDecayCorrected'] = decay_corrected_metadata['ImageDecayCorrected']
+        json_data['ImageDecayCorrectionTime'] = decay_corrected_metadata['ImageDecayCorrectionTime']
 
-    stitched_image = ants.from_numpy(data=stitched_image_array,
+    stitched_image_arr = np.concatenate(corrected_arrays, axis=3)
+
+    stitched_image = ants.from_numpy(data=stitched_image_arr,
                                      origin=initial_img.origin,
                                      spacing=initial_img.spacing,
                                      direction=initial_img.direction)
@@ -134,10 +137,10 @@ def stitch_broken_scans(initial_image_path: str,
     if output_image_path is not None:
         ants.image_write(image=stitched_image,
                          filename=output_image_path)
-        image_io.write_dict_to_json(meta_data_dict=new_metadata,
+        image_io.write_dict_to_json(meta_data_dict=json_data,
                                     out_path=image_io.gen_meta_data_filepath_for_nifti(nifty_path=output_image_path))
 
-    return stitched_image
+    return stitched_image, json_data
 
 def crop_image(input_image_path: str,
                out_image_path: str,

@@ -14,7 +14,7 @@ from ..utils.scan_timing import ScanTimingInfo
 
 def undo_decay_correction(input_image_path: str,
                           output_image_path: str,
-                          metadata_dict: dict = None) -> ants.ANTsImage:
+                          metadata_dict: dict = None) -> (ants.ANTsImage, dict):
     """Uses decay factors from the metadata for an image to remove decay correction for each frame.
 
     This function expects to find decay factors in the .json sidecar file, or the metadata_dict, if given. If there are
@@ -51,21 +51,23 @@ def undo_decay_correction(input_image_path: str,
     uncorrected_image = ants.from_numpy_like(data=uncorrected_image_numpy,
                                              image=decay_corrected_image)
 
+    json_data['DecayFactor'] = list(np.ones_like(decay_factors))
+    json_data['ImageDecayCorrected'] = "false"
+
     if output_image_path is not None:
         ants.image_write(image=uncorrected_image,
                          filename=output_image_path)
 
-        json_data['DecayFactor'] = list(np.ones_like(decay_factors))
-        json_data['ImageDecayCorrected'] = "false"
         output_json_path = image_io.gen_meta_data_filepath_for_nifti(nifty_path=output_image_path)
         image_io.write_dict_to_json(meta_data_dict=json_data,
                                     out_path=output_json_path)
 
-    return uncorrected_image
+    return uncorrected_image, json_data
 
 
 def decay_correct(input_image_path: str,
-                  output_image_path: str) -> ants.ANTsImage:
+                  output_image_path: str,
+                  metadata_dict: dict = None) -> (ants.ANTsImage, dict):
     r"""Recalculate decay_correction for nifti image based on frame reference times.
 
     This function will compute frame reference times based on frame time starts and frame durations (both of which
@@ -86,14 +88,22 @@ def decay_correct(input_image_path: str,
         input_image_path (str): Path to input (.nii.gz or .nii) image. A .json sidecar file should exist in the same
              directory as the input image.
         output_image_path (str): Path to output (.nii.gz or .nii) output image.
+        metadata_dict (dict, optional): Metadata dictionary to use instead of corresponding .json sidecar. If not
+            specified (default behavior), function will try to use sidecar .json in the same directory as
+            input_image_path.
 
     Returns:
         ants.ANTsImage: Decay-Corrected Image
 
     """
+
+    if metadata_dict is not None:
+        json_data = metadata_dict
+    else:
+        json_data = image_io.load_metadata_for_nifti_with_same_filename(image_path=input_image_path)
+
     half_life = image_io.get_half_life_from_nifti(image_path=input_image_path)
 
-    json_data = image_io.load_metadata_for_nifti_with_same_filename(image_path=input_image_path)
     uncorrected_image = ants.image_read(filename=input_image_path)
 
     frame_info = ScanTimingInfo.from_nifti(image_path=input_image_path)
@@ -101,8 +111,8 @@ def decay_correct(input_image_path: str,
 
     original_decay_factors = frame_info.decay
     if np.any(original_decay_factors != 1):
-        raise ValueError(f'Decay Factors other than 1 found in metadata for {input_image_path}. This likely means the '
-                         f'image has not had its previous decay correction undone. Try running undo_decay_correction '
+        raise ValueError(f'Decay Correction Factors other than 1 found in metadata for {input_image_path}. This likely '
+                         f'means the image has already been decay-corrected. Try running undo_decay_correction '
                          f'before running this function to avoid decay correcting an image more than once.')
 
     corrected_data = uncorrected_image.numpy()
@@ -115,15 +125,16 @@ def decay_correct(input_image_path: str,
     corrected_image = ants.from_numpy_like(data=corrected_data,
                                            image=uncorrected_image)
 
+    json_data['DecayFactor'] = new_decay_factors
+    json_data['ImageDecayCorrected'] = "true"
+    json_data['ImageDecayCorrectionTime'] = 0
+    json_data['FrameReferenceTime'] = frame_reference_times
+
     if output_image_path is not None:
         ants.image_write(image=corrected_image,
                          filename=output_image_path)
         output_json_path = image_io.gen_meta_data_filepath_for_nifti(nifty_path=output_image_path)
-        json_data['DecayFactor'] = new_decay_factors
-        json_data['ImageDecayCorrected'] = "true"
-        json_data['ImageDecayCorrectionTime'] = 0
-        json_data['FrameReferenceTime'] = frame_reference_times
         image_io.write_dict_to_json(meta_data_dict=json_data,
                                     out_path=output_json_path)
 
-    return corrected_image
+    return corrected_image, json_data
