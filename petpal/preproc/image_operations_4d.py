@@ -22,23 +22,21 @@ TODO:
     and right cerebellum gray matter).
 
 """
-import os
-import pathlib
 import datetime
+import os
 import tempfile
+
 import ants
 import nibabel
 import numpy as np
 from scipy.ndimage import center_of_mass
 
-from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
-from ..utils import image_io, math_lib
-from ..utils.bids_utils import add_description_to_bids_path
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
+from ..utils import image_io, math_lib
+from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
 
-def stitch_broken_scans(initial_image_path: str,
-                        output_image_path: str | None,
-                        subsequent_image_paths: str | list[str]) -> (ants.ANTsImage, dict):
+
+def stitch_broken_scans(images_in_order: list[(ants.ANTsImage, dict)]) -> (ants.ANTsImage, dict):
     """
     'Stitch' together 2 or more images from one PET session into a single image, recalculating decay correction.
 
@@ -49,34 +47,19 @@ def stitch_broken_scans(initial_image_path: str,
     Important: All subsequent images must be registered to the initial image prior to calling this function.
 
     Args:
-        initial_image_path (str): Path to the initial image captured during the PET session. 'TimeZero' from this
+        images_in_order (str): Path to the initial image captured during the PET session. 'TimeZero' from this
             image's metadata will be considered the true value to correct the rest of the images to.
-        output_image_path (str): Path (including filename) to save the stitched image to. If None, no file will be
-            written.
-        subsequent_image_paths (str | list[str]): Path(s) to 1 or more subsequent images obtained in the same PET
-            session. If passing a list (multiple subsequent images), the order of the paths **MUST** be reflect the
-            timing of the scans captured. For example, the first path in the list must correspond to the second section
-            of the PET session, the second path to the third section, and so on. Passing a string indicates there is
-            only one subsequent scan to stitch to the first. **Note that all images must be registered to the first
-            (initial_image_path).**
 
     Returns:
         ants.ANTsImage: stitched image
     """
 
-    initial_img = ants.image_read(filename=initial_image_path)
-    initial_arr = initial_img.numpy()
-    initial_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=initial_image_path)
-
-    if isinstance(subsequent_image_paths, str):
-        subsequent_image_paths = [subsequent_image_paths]
-
-    subsequent_metadata = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
-                           for path in subsequent_image_paths]
+    ordered_images = [obj[0] for obj in images_in_order]
+    ordered_json_dicts = [obj[1] for obj in images_in_order]
 
     try:
-        subsequent_time_zeroes = [meta['TimeZero'] for meta in subsequent_metadata]
-        true_time_zero = initial_metadata['TimeZero']
+        subsequent_time_zeroes = [meta['TimeZero'] for meta in ordered_json_dicts[1:]]
+        true_time_zero = ordered_json_dicts[0]['TimeZero']
     except KeyError:
         raise KeyError(f'.json sidecar for one of your input images does not contain required BIDS key "TimeZero". '
                        f'Aborting...')
@@ -92,32 +75,18 @@ def stitch_broken_scans(initial_image_path: str,
 
     subsequent_time_deltas = [t - initial_scan_datetime for t in subsequent_scan_datetimes]
 
-    for time_delta, metadata in zip(subsequent_time_deltas,subsequent_metadata):
+    for time_delta, metadata in zip(subsequent_time_deltas,ordered_json_dicts[1:]):
         metadata['FrameTimesStart'] = [t+time_delta.total_seconds() for t in metadata['FrameTimesStart']]
         metadata['TimeZero'] = true_time_zero
 
-    corrected_arrays = [initial_arr]
-    json_data = initial_metadata
+    corrected_arrays = [ordered_images[0].numpy()]
+    json_data = ordered_json_dicts[0]
 
-    for path, metadata in zip(subsequent_image_paths, subsequent_metadata):
+    for img, metadata in zip(ordered_images[1:], ordered_json_dicts[1:]):
 
-        if output_image_path is not None:
-            uncorrected_img_path = add_description_to_bids_path(filepath=path,
-                                                                description="NoDecayCorrection")
-        else: uncorrected_img_path = None
+        uncorrected_obj = undo_decay_correction(input_image=(img, metadata))
 
-        uncorrected_img, uncorrected_metadata = undo_decay_correction(input_image_path=path,
-                                                                      output_image_path=uncorrected_img_path,
-                                                                      metadata_dict=metadata)
-
-        if output_image_path is not None:
-            corrected_img_path = add_description_to_bids_path(filepath=path,
-                                                              description="DecayCorrected")
-        else: corrected_img_path = None
-
-        decay_corrected_img, decay_corrected_metadata = decay_correct(input_image_path=uncorrected_img_path,
-                                                                      output_image_path=corrected_img_path,
-                                                                      metadata_dict=uncorrected_metadata)
+        decay_corrected_img, decay_corrected_metadata = decay_correct(input_image=uncorrected_obj)
 
         corrected_arrays.append(decay_corrected_img.numpy())
         json_data['FrameTimesStart'].extend(decay_corrected_metadata['FrameTimesStart'])
@@ -130,15 +99,9 @@ def stitch_broken_scans(initial_image_path: str,
     stitched_image_arr = np.concatenate(corrected_arrays, axis=3)
 
     stitched_image = ants.from_numpy(data=stitched_image_arr,
-                                     origin=initial_img.origin,
-                                     spacing=initial_img.spacing,
-                                     direction=initial_img.direction)
-
-    if output_image_path is not None:
-        ants.image_write(image=stitched_image,
-                         filename=output_image_path)
-        image_io.write_dict_to_json(meta_data_dict=json_data,
-                                    out_path=image_io.gen_meta_data_filepath_for_nifti(nifty_path=output_image_path))
+                                     origin=ordered_images[0].origin,
+                                     spacing=ordered_images[0].spacing,
+                                     direction=ordered_images[0].direction)
 
     return stitched_image, json_data
 
