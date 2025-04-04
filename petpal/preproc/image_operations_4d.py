@@ -14,9 +14,6 @@ TODO:
       such as finding the average uptake encompassing two regions.
     * Methods that create new images should copy over a previous metadata file, if one exists,
       and create a new one if it does not.
-    * (stitch_broken_scans) Separate 'add desc entity' section to its own function somewhere.
-    * (stitch_broken_scans) Assumes non-BIDS key 'DecayFactor' instead of BIDS-required 'DecayCorrectionFactor' for
-      ease-of-use with NIL data. Should be changed in the future.
     * (stitch_broken_scans) Currently writes intermediate files even if output_image_path is None.
     * (suvr) Allow list to be passed as ref_region to use multiple regions together as a reference region (i.e. left
     and right cerebellum gray matter).
@@ -35,6 +32,58 @@ from ..preproc.decay_correction import undo_decay_correction, decay_correct
 from ..utils import image_io, math_lib
 from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
 
+
+def concatenate_pet_segments(images_in_order: list[(ants.ANTsImage, dict)]) -> (ants.ANTsImage, dict):
+    """
+
+    Args:
+        images_in_order:
+
+    Returns:
+
+    """
+
+    ordered_images = [obj[0] for obj in images_in_order]
+    ordered_json_dicts = [obj[1] for obj in images_in_order]
+
+    try:
+        subsequent_time_zeroes = [meta['TimeZero'] for meta in ordered_json_dicts[1:]]
+        true_time_zero = ordered_json_dicts[0]['TimeZero']
+    except KeyError:
+        raise KeyError(f'.json sidecar for one of your input images does not contain required BIDS key "TimeZero". '
+                       f'Aborting...')
+
+    initial_scan_time = datetime.time.fromisoformat(true_time_zero)
+    placeholder_date = datetime.date.today()
+    initial_scan_datetime = datetime.datetime.combine(date=placeholder_date,
+                                                      time=initial_scan_time)
+
+    subsequent_scan_times = [datetime.time.fromisoformat(t) for t in subsequent_time_zeroes]
+    subsequent_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
+                                 for scan_time in subsequent_scan_times]
+
+    subsequent_time_deltas = [t - initial_scan_datetime for t in subsequent_scan_datetimes]
+
+    for time_delta, metadata in zip(subsequent_time_deltas, ordered_json_dicts[1:]):
+        metadata['FrameTimesStart'] = [t + time_delta.total_seconds() for t in metadata['FrameTimesStart']]
+        metadata['FrameReferenceTime'] = [start+dur/2.0 for
+                                          start, dur in zip(metadata['FrameTimesStart'], metadata['FrameDuration'])]
+        metadata['TimeZero'] = true_time_zero
+
+    corrected_arrays = [ordered_images[0].numpy()]
+    json_data = ordered_json_dicts[0]
+
+    for img, metadata in zip(ordered_images[1:], ordered_json_dicts[1:]):
+        json_data['FrameTimesStart'].extend(metadata['FrameTimesStart'])
+        json_data['FrameReferenceTime'].extend(metadata['FrameReferenceTime'])
+        json_data['FrameDuration'].extend(metadata['FrameDuration'])
+
+        corrected_arrays.append(img.numpy())
+
+    stitched_arr = np.concatenate(corrected_arrays, axis=3)
+    stitched_img = ants.from_numpy(stitched_arr)
+
+    return stitched_img, json_data
 
 def stitch_broken_scans(images_in_order: list[(ants.ANTsImage, dict)]) -> (ants.ANTsImage, dict):
     """
