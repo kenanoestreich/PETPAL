@@ -30,6 +30,7 @@ from scipy.ndimage import center_of_mass
 
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
 from ..utils import image_io, math_lib
+from ..utils.scan_timing import ScanTimingInfo
 from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
 
 
@@ -72,13 +73,17 @@ def concatenate_pet_segments(images_in_order: list[(ants.ANTsImage, dict)]) -> (
 
     corrected_arrays = [ordered_images[0].numpy()]
     json_data = ordered_json_dicts[0]
+    decay = ScanTimingInfo.from_metadata(metadata_dict=json_data).decay
 
     for img, metadata in zip(ordered_images[1:], ordered_json_dicts[1:]):
         json_data['FrameTimesStart'].extend(metadata['FrameTimesStart'])
         json_data['FrameReferenceTime'].extend(metadata['FrameReferenceTime'])
         json_data['FrameDuration'].extend(metadata['FrameDuration'])
+        decay = np.concatenate([decay, ScanTimingInfo.from_metadata(metadata_dict=metadata).decay])
 
         corrected_arrays.append(img.numpy())
+
+    json_data['DecayCorrectionFactor'] = list(decay)
 
     stitched_arr = np.concatenate(corrected_arrays, axis=3)
     stitched_img = ants.from_numpy(stitched_arr)
@@ -90,8 +95,9 @@ def stitch_broken_scans(images_in_order: list[(ants.ANTsImage, dict)]) -> (ants.
     'Stitch' together 2 or more images from one PET session into a single image, recalculating decay correction.
 
     This function takes multiple 4D images from a single PET session in which the scanning had to pause in the middle
-    (a 'broken scan'), recomputes decay corrections for all subsequent images using the correct TimeZero (TimeZero for
-    the first image), then concatenates all the frames into a single 4D image.
+    (a 'broken scan') and performs the following steps:
+        1.  Concatenate all images into a single image with corrected frame times.
+        2.  Recalculate decay correction for the whole image.
 
     Important: All subsequent images must be registered to the initial image prior to calling this function.
 
@@ -103,56 +109,11 @@ def stitch_broken_scans(images_in_order: list[(ants.ANTsImage, dict)]) -> (ants.
         ants.ANTsImage: stitched image
     """
 
-    ordered_images = [obj[0] for obj in images_in_order]
-    ordered_json_dicts = [obj[1] for obj in images_in_order]
+    concatenated_obj = concatenate_pet_segments(images_in_order)
+    uncorrected_obj = undo_decay_correction(input_image=concatenated_obj)
+    decay_corrected_obj = decay_correct(input_image=uncorrected_obj)
 
-    try:
-        subsequent_time_zeroes = [meta['TimeZero'] for meta in ordered_json_dicts[1:]]
-        true_time_zero = ordered_json_dicts[0]['TimeZero']
-    except KeyError:
-        raise KeyError(f'.json sidecar for one of your input images does not contain required BIDS key "TimeZero". '
-                       f'Aborting...')
-
-    initial_scan_time = datetime.time.fromisoformat(true_time_zero)
-    placeholder_date = datetime.date.today()
-    initial_scan_datetime = datetime.datetime.combine(date=placeholder_date,
-                                                      time=initial_scan_time)
-
-    subsequent_scan_times = [datetime.time.fromisoformat(t) for t in subsequent_time_zeroes]
-    subsequent_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
-                                 for scan_time in subsequent_scan_times]
-
-    subsequent_time_deltas = [t - initial_scan_datetime for t in subsequent_scan_datetimes]
-
-    for time_delta, metadata in zip(subsequent_time_deltas,ordered_json_dicts[1:]):
-        metadata['FrameTimesStart'] = [t+time_delta.total_seconds() for t in metadata['FrameTimesStart']]
-        metadata['TimeZero'] = true_time_zero
-
-    corrected_arrays = [ordered_images[0].numpy()]
-    json_data = ordered_json_dicts[0]
-
-    for img, metadata in zip(ordered_images[1:], ordered_json_dicts[1:]):
-
-        uncorrected_obj = undo_decay_correction(input_image=(img, metadata))
-
-        decay_corrected_img, decay_corrected_metadata = decay_correct(input_image=uncorrected_obj)
-
-        corrected_arrays.append(decay_corrected_img.numpy())
-        json_data['FrameTimesStart'].extend(decay_corrected_metadata['FrameTimesStart'])
-        json_data['FrameReferenceTime'].extend(decay_corrected_metadata['FrameReferenceTime'])
-        json_data['FrameDuration'].extend(decay_corrected_metadata['FrameDuration'])
-        json_data['DecayFactor'].extend(decay_corrected_metadata['DecayFactor'])
-        json_data['ImageDecayCorrected'] = decay_corrected_metadata['ImageDecayCorrected']
-        json_data['ImageDecayCorrectionTime'] = decay_corrected_metadata['ImageDecayCorrectionTime']
-
-    stitched_image_arr = np.concatenate(corrected_arrays, axis=3)
-
-    stitched_image = ants.from_numpy(data=stitched_image_arr,
-                                     origin=ordered_images[0].origin,
-                                     spacing=ordered_images[0].spacing,
-                                     direction=ordered_images[0].direction)
-
-    return stitched_image, json_data
+    return decay_corrected_obj
 
 def crop_image(input_image_path: str,
                out_image_path: str,

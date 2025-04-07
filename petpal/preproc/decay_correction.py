@@ -42,7 +42,7 @@ def undo_decay_correction(input_image: (ants.ANTsImage, dict)) -> (ants.ANTsImag
     uncorrected_img = ants.from_numpy_like(data=uncorrected_arr,
                                            image=decay_corrected_img)
 
-    json_data['DecayFactor'] = list(np.ones_like(decay_factors))
+    json_data['DecayCorrectionFactor'] = list(np.ones_like(decay_factors))
     json_data['ImageDecayCorrected'] = False
 
     return uncorrected_img, json_data
@@ -105,7 +105,7 @@ def decay_correct(input_image: (ants.ANTsImage, dict)) -> (ants.ANTsImage, dict)
     corrected_img = ants.from_numpy_like(data=corrected_arr,
                                          image=uncorrected_img)
 
-    json_data['DecayFactor'] = new_decay_factors
+    json_data['DecayCorrectionFactor'] = new_decay_factors
     json_data['ImageDecayCorrected'] = "true"
     json_data['ImageDecayCorrectionTime'] = 0
     json_data['FrameReferenceTime'] = frame_reference_times
