@@ -167,6 +167,47 @@ def warp_pet_to_atlas(input_image: ants.ANTsImage,
     return warped_img
 
 
+def warp_segmentation_to_atlas(input_image: ants.ANTsImage,
+                               anat_image_path: str,
+                               atlas_image_path: str,
+                               type_of_transform: str = 'SyN',
+                               **kwargs) -> ants.ANTsImage:
+    """Warp a segmentation image (in anatomical space) to atlas space using an anatomical image.
+
+    Note:
+        This function is nearly identical to :func:`warp_pet_to_atlas` with the exception that the interpolator for
+        :func:`ants.registration.apply_transforms` is set to 'genericLabel' so that it works with segmentation images.
+
+    Args:
+        input_image (:py:class:`~ants.core.ants_image.ANTsImage`): Segmentation image to be registered to atlas.
+            Must be in anatomical space (i.e. same space as anat_image_path image). Must be 3D.
+        anat_image_path (str): Path to anatomical image used to compute registration to atlas space.
+        atlas_image_path (str): Atlas to which input image is warped.
+        type_of_transform (str): Type of non-linear transform applied to input
+            image using :py:func:`ants.registration`. Default is 'SyN' (Symmetric Normalization).
+        kwargs (keyword arguments): Additional arguments passed to :py:func:`ants.registration`.
+
+    Returns:
+        :py:class:`~ants.core.ants_image.ANTsImage`: Input segmentation warped to atlas space.
+    """
+    anat_image_ants = ants.image_read(anat_image_path)
+    atlas_image_ants = ants.image_read(atlas_image_path)
+
+    anat_atlas_xfm = ants.registration(fixed=atlas_image_ants,
+                                       moving=anat_image_ants,
+                                       type_of_transform=type_of_transform,
+                                       write_composite_transform=True,
+                                       **kwargs)
+
+    warped_img = ants.apply_transforms(fixed=atlas_image_ants,
+                                       moving=input_image,
+                                       transformlist=anat_atlas_xfm['fwdtransforms'],
+                                       verbose=True,
+                                       interpolator='genericLabel',
+                                       imagetype=0)
+
+    return warped_img
+
 def apply_xfm_ants(input_image_path: str,
                    ref_image_path: str,
                    out_image_path: str,
