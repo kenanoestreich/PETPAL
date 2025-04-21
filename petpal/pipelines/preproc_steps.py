@@ -730,7 +730,7 @@ class ImageToImageStep(FunctionBasedStep):
         """
         defaults = dict(name=name, function=ANTsImageToANTsImage(warp_pet_to_atlas),
                         input_image_path='', output_image_path='', anat_image_path=anat_image_path,
-                        atlas_image_path=atlas_image_path, **overrides)
+                        atlas_image_path=atlas_image_path, )
         override_dict = defaults | overrides
 
         try:
@@ -762,7 +762,7 @@ class ImageToImageStep(FunctionBasedStep):
         """
         defaults = dict(name=name, function=ANTsImageToANTsImage(warp_segmentation_to_atlas),
                         input_image_path='', output_image_path='', anat_image_path=anat_image_path,
-                        atlas_image_path=atlas_image_path, **overrides)
+                        atlas_image_path=atlas_image_path, )
         override_dict = defaults | overrides
 
         try:
