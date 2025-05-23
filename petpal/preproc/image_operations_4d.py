@@ -34,6 +34,7 @@ from ..utils.useful_functions import weighted_series_sum
 from ..utils import image_io, math_lib
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
 
+
 def stitch_broken_scans(input_image_path: str,
                         output_image_path: str,
                         noninitial_image_paths: list[str]) -> ants.ANTsImage:
@@ -65,7 +66,7 @@ def stitch_broken_scans(input_image_path: str,
     initial_arr = initial_img.numpy()
     initial_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=input_image_path)
     noninitial_metadata = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
-                                       for path in noninitial_image_paths]
+                           for path in noninitial_image_paths]
 
     try:
         noninitial_time_zeroes = [meta['TimeZero'] for meta in noninitial_metadata]
@@ -80,20 +81,20 @@ def stitch_broken_scans(input_image_path: str,
                                                  time=initial_time)
     noninitial_times = [datetime.time.fromisoformat(t) for t in noninitial_time_zeroes]
     noninitial_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
-                                 for scan_time in noninitial_times]
+                            for scan_time in noninitial_times]
 
     times_since_timezero = [t - initial_datetime for t in noninitial_datetimes]
 
-    for time_diff, additional_image_metadata in zip(times_since_timezero,noninitial_metadata):
+    for time_diff, additional_image_metadata in zip(times_since_timezero, noninitial_metadata):
         original_frame_times_start = additional_image_metadata['FrameTimesStart']
-        additional_image_metadata['FrameTimesStart'] = [t+time_diff.total_seconds() for t in original_frame_times_start]
+        additional_image_metadata['FrameTimesStart'] = [t + time_diff.total_seconds() for t in
+                                                        original_frame_times_start]
         additional_image_metadata['TimeZero'] = initial_time_zero
 
     corrected_arrays = [initial_arr]
     new_metadata = initial_metadata
 
-    for additional_image_path, metadata in zip(noninitial_image_paths,noninitial_metadata):
-
+    for additional_image_path, metadata in zip(noninitial_image_paths, noninitial_metadata):
         original_path = pathlib.Path(additional_image_path)
         original_stem = original_path.stem
         split_stem = original_stem.split("_")
@@ -133,10 +134,11 @@ def stitch_broken_scans(input_image_path: str,
 
     return stitched_image
 
+
 def crop_image(input_image_path: str,
                out_image_path: str,
-               x_dim: int=256,
-               y_dim: int=256):
+               x_dim: int = 256,
+               y_dim: int = 256):
     """
     Crops an image in the X and Y axes to exclude voxels outside of the head. This is done to
     reduce the size of the image for faster processing, while preserving scientifically
@@ -159,19 +161,19 @@ def crop_image(input_image_path: str,
     image = nibabel.load(input_image_path)
     image_np = image.get_fdata()
 
-    if len(image_np.shape)<4:
+    if len(image_np.shape) < 4:
         center = center_of_mass(image_np)
     else:
-        image_mean = np.mean(image_np,axis=-1)
+        image_mean = np.mean(image_np, axis=-1)
         center = center_of_mass(image_mean)
 
     center = np.round(center).astype('int')
     x_half = x_dim // 2
     y_half = y_dim // 2
 
-    cropped_image = image.slicer[center[0]-x_half:center[0]+x_half,
-                                 center[1]-y_half:center[1]+y_half]
-    nibabel.save(cropped_image,out_image_path)
+    cropped_image = image.slicer[center[0] - x_half:center[0] + x_half,
+                    center[1] - y_half:center[1] + y_half]
+    nibabel.save(cropped_image, out_image_path)
     image_io.safe_copy_meta(input_image_path=input_image_path,
                             out_image_path=out_image_path)
     return cropped_image
@@ -285,7 +287,7 @@ def determine_motion_target(motion_target_option: str | tuple | list,
             out_image_file = tempfile.mkstemp(suffix='_mean.nii.gz')[1]
             input_img = ants.image_read(input_image_4d_path)
             mean_img = get_average_of_timeseries(input_image=input_img)
-            ants.image_write(image=mean_img,filename=out_image_file)
+            ants.image_write(image=mean_img, filename=out_image_file)
             return out_image_file
 
         raise ValueError("motion_target_option did not match a file or 'weighted_series_sum'")
@@ -321,7 +323,7 @@ def brain_mask(input_image_4d_path: str,
                atlas_image_path: str,
                atlas_mask_path: str,
                motion_target_option='mean_image',
-               half_life: float=None):
+               half_life: float = None):
     """
     Create a brain mask for a PET image. Create target PET image, which is then warped to a
     provided anatomical atlas. The transformation to atlas space is then applied to transform a
@@ -358,13 +360,14 @@ def brain_mask(input_image_4d_path: str,
         interpolator='nearestNeighbor'
     )
     mask = mask_on_pet.get_mask()
-    ants.image_write(image=mask,filename=out_image_path)
+    ants.image_write(image=mask, filename=out_image_path)
+
 
 def extract_mean_roi_tac_from_nifti_using_segmentation(input_image_4d_numpy: np.ndarray,
                                                        segmentation_image_numpy: np.ndarray,
                                                        region: int,
                                                        verbose: bool,
-                                                       with_std: bool=False) -> np.ndarray:
+                                                       with_std: bool = False) -> np.ndarray:
     """
     Creates a time-activity curve (TAC) by computing the average value within a region, for each 
     frame in a 4D PET image series. Takes as input a PET image, which has been registered to
@@ -393,13 +396,13 @@ def extract_mean_roi_tac_from_nifti_using_segmentation(input_image_4d_numpy: np.
     """
 
     pet_image_4d = input_image_4d_numpy
-    if len(pet_image_4d.shape)==4:
+    if len(pet_image_4d.shape) == 4:
         num_frames = pet_image_4d.shape[3]
     else:
         num_frames = 1
     seg_image = segmentation_image_numpy
 
-    if seg_image.shape[:3]!=pet_image_4d.shape[:3]:
+    if seg_image.shape[:3] != pet_image_4d.shape[:3]:
         raise ValueError('Mis-match in image shape of segmentation image '
                          f'({seg_image.shape}) and PET image '
                          f'({pet_image_4d.shape[:3]}). Consider resampling '
@@ -419,8 +422,8 @@ def extract_mean_roi_tac_from_nifti_using_segmentation(input_image_4d_numpy: np.
 
 
 def threshold(input_image_numpy: np.ndarray,
-              lower_bound: float=-np.inf,
-              upper_bound: float=np.inf):
+              lower_bound: float = -np.inf,
+              upper_bound: float = np.inf):
     """
     Threshold an image above and/or below a pair of values.
     """
@@ -431,8 +434,8 @@ def threshold(input_image_numpy: np.ndarray,
 
 
 def binarize_image_with_threshold(input_image_numpy: np.ndarray,
-                                  lower_bound: float=-np.inf,
-                                  upper_bound: float=np.inf):
+                                  lower_bound: float = -np.inf,
+                                  upper_bound: float = np.inf):
     """
     Threshold an image above and/or below a pair of values, and return a binary mask.
 
@@ -459,7 +462,7 @@ def get_average_of_timeseries(input_image: ants.ANTsImage):
     mean_image = ants.from_numpy(data=mean_array,
                                  origin=input_image.origin[:-1],
                                  spacing=input_image.spacing[:-1],
-                                 direction=input_image.direction[:-1,:-1])
+                                 direction=input_image.direction[:-1, :-1])
     return mean_image
 
 
@@ -467,7 +470,7 @@ def suvr(input_image_path: str,
          out_image_path: str | None,
          segmentation_image_path: str,
          ref_region: int,
-         verbose: bool=False) -> ants.ANTsImage:
+         verbose: bool = False) -> ants.ANTsImage:
     """
     Computes an ``SUVR`` (Standard Uptake Value Ratio) by taking the average of
     an input image within a reference region, and dividing the input image by
@@ -489,10 +492,10 @@ def suvr(input_image_path: str,
     pet_img = ants.image_read(filename=input_image_path)
     pet_arr = pet_img.numpy()
     segmentation_img = ants.image_read(filename=segmentation_image_path,
-                                        pixeltype='unsigned int')
+                                       pixeltype='unsigned int')
     segmentation_arr = segmentation_img.numpy()
 
-    if len(pet_arr.shape)!=3:
+    if len(pet_arr.shape) != 3:
         raise ValueError("SUVR input image is not 3D. If your image is dynamic, try running 'weighted_series_sum'"
                          " first.")
 
@@ -500,11 +503,11 @@ def suvr(input_image_path: str,
                                                                         segmentation_image_numpy=segmentation_arr,
                                                                         region=ref_region,
                                                                         verbose=verbose)
-    
+
     suvr_arr = pet_arr / ref_region_avg[0]
 
     out_img = ants.from_numpy_like(data=suvr_arr,
-                                     image=pet_img)
+                                   image=pet_img)
 
     if out_image_path is not None:
         ants.image_write(image=out_img,
@@ -519,7 +522,7 @@ def gauss_blur(input_image_path: str,
                blur_size_mm: float,
                out_image_path: str,
                verbose: bool,
-               use_fwhm: bool=True):
+               use_fwhm: bool = True):
     """
     Blur an image with a 3D Gaussian kernal of a provided size in mm. Extracts
     Gaussian sigma from provided blur size, and voxel sizes in the image
@@ -549,9 +552,9 @@ def gauss_blur(input_image_path: str,
     out_image = nibabel.nifti1.Nifti1Image(dataobj=blur_image,
                                            affine=input_nibabel.affine,
                                            header=input_nibabel.header)
-    nibabel.save(img=out_image,filename=out_image_path)
+    nibabel.save(img=out_image, filename=out_image_path)
 
-    image_io.safe_copy_meta(input_image_path=input_image_path,out_image_path=out_image_path)
+    image_io.safe_copy_meta(input_image_path=input_image_path, out_image_path=out_image_path)
 
     if verbose:
         print(f'Blurred image saved to {out_image_path}.')
@@ -581,14 +584,13 @@ def roi_tac(input_image_4d_path: str,
     pet_numpy = nibabel.load(input_image_4d_path).get_fdata()
     seg_numpy = nibabel.load(roi_image_path).get_fdata()
 
-
     extracted_tac = tac_extraction_func(input_image_4d_numpy=pet_numpy,
                                         segmentation_image_numpy=seg_numpy,
                                         region=region,
                                         verbose=verbose)
-    region_tac_file = np.array([pet_meta[time_frame_keyword],extracted_tac]).T
+    region_tac_file = np.array([pet_meta[time_frame_keyword], extracted_tac]).T
     header_text = 'mean_activity'
-    np.savetxt(out_tac_path,region_tac_file,delimiter='\t',header=header_text,comments='')
+    np.savetxt(out_tac_path, region_tac_file, delimiter='\t', header=header_text, comments='')
 
 
 class SimpleAutoImageCropper(object):
@@ -629,6 +631,7 @@ class SimpleAutoImageCropper(object):
         
         
     """
+
     def __init__(self,
                  input_image_path: str,
                  out_image_path: str,
@@ -686,7 +689,6 @@ class SimpleAutoImageCropper(object):
         if verbose:
             print(f"(info): Input image has shape:  {self.input_img_obj.shape}")
             print(f"(info): Output image has shape: {self.crop_img_obj.shape}")
-
 
     @staticmethod
     def gen_line_profile(img_arr: np.ndarray, dim: str = 'x'):
