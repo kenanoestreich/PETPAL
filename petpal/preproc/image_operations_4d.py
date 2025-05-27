@@ -30,10 +30,10 @@ import nibabel
 import numpy as np
 from scipy.ndimage import center_of_mass
 
-from ..utils.useful_functions import weighted_series_sum
-from ..utils import image_io, math_lib
 from ..preproc.decay_correction import undo_decay_correction, decay_correct
-
+from ..utils import image_io, math_lib
+from ..utils.scan_timing import ScanTimingInfo
+from ..utils.useful_functions import weighted_series_sum, check_physical_space_for_ants_image_pair
 
 def stitch_broken_scans(input_image_path: str,
                         output_image_path: str,
@@ -57,82 +57,79 @@ def stitch_broken_scans(input_image_path: str,
 
     Returns:
         ants.ANTsImage: stitched image
-
-    Todo:
-        - Check physical space consistency
     """
 
     initial_img = ants.image_read(filename=input_image_path)
+    subsequent_imgs = [ants.image_read(filename=path) for path in noninitial_image_paths]
+
+    for img in subsequent_imgs:
+        assert check_physical_space_for_ants_image_pair(initial_img, img), (
+            "At least one of the subsequent images does not have the same spatial dimensions as the initial image. "
+            "Ensure that all passed images have the same spatial dimensions.")
+
     initial_arr = initial_img.numpy()
     initial_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=input_image_path)
-    noninitial_metadata = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
+    subsequent_metadata = [image_io.load_metadata_for_nifti_with_same_filename(image_path=path)
                            for path in noninitial_image_paths]
 
     try:
-        noninitial_time_zeroes = [meta['TimeZero'] for meta in noninitial_metadata]
-        initial_time_zero = initial_metadata['TimeZero']
+        subsequent_time_zeroes = [meta['TimeZero'] for meta in subsequent_metadata]
+        true_time_zero = initial_metadata['TimeZero']
     except KeyError:
         raise KeyError(f'.json sidecar for one of your input images does not contain required BIDS key "TimeZero". '
                        f'Aborting...')
 
-    initial_time = datetime.time.fromisoformat(initial_time_zero)
+    initial_scan_time = datetime.time.fromisoformat(true_time_zero)
     placeholder_date = datetime.date.today()
-    initial_datetime = datetime.datetime.combine(date=placeholder_date,
-                                                 time=initial_time)
-    noninitial_times = [datetime.time.fromisoformat(t) for t in noninitial_time_zeroes]
-    noninitial_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
-                            for scan_time in noninitial_times]
+    initial_scan_datetime = datetime.datetime.combine(date=placeholder_date,
+                                                 time=initial_scan_time)
+    subsequent_scan_times = [datetime.time.fromisoformat(t) for t in subsequent_time_zeroes]
+    subsequent_scan_datetimes = [datetime.datetime.combine(date=placeholder_date, time=scan_time)
+                            for scan_time in subsequent_scan_times]
 
-    times_since_timezero = [t - initial_datetime for t in noninitial_datetimes]
+    subsequent_time_deltas = [t - initial_scan_datetime for t in subsequent_scan_datetimes]
 
-    for time_diff, additional_image_metadata in zip(times_since_timezero, noninitial_metadata):
-        original_frame_times_start = additional_image_metadata['FrameTimesStart']
-        additional_image_metadata['FrameTimesStart'] = [t + time_diff.total_seconds() for t in
-                                                        original_frame_times_start]
-        additional_image_metadata['TimeZero'] = initial_time_zero
+    for time_delta, metadata in zip(subsequent_time_deltas, subsequent_metadata):
+        scan_timing_obj = ScanTimingInfo.from_metadata(metadata)
+        metadata['FrameTimesStart'] = [t + time_delta.total_seconds() for t in scan_timing_obj.start.tolist()]
+        metadata['FrameReferenceTime'] = scan_timing_obj.center.tolist()
+        metadata['TimeZero'] = true_time_zero
 
-    corrected_arrays = [initial_arr]
-    new_metadata = initial_metadata
+    arrs_to_concatenate = [initial_arr]
+    concatenated_metadata = initial_metadata
+    decay = ScanTimingInfo.from_metadata(initial_metadata).decay
 
-    for additional_image_path, metadata in zip(noninitial_image_paths, noninitial_metadata):
-        original_path = pathlib.Path(additional_image_path)
-        original_stem = original_path.stem
-        split_stem = original_stem.split("_")
-        split_stem.insert(-1, "desc-nodecaycorrect")
-        new_stem = "_".join(split_stem)
-        new_path = str(original_path).replace(original_stem, new_stem)
+    for img, metadata in zip(subsequent_imgs, subsequent_metadata):
+        scan_timing_obj = ScanTimingInfo.from_metadata(metadata)
+        concatenated_metadata['FrameTimesStart'].extend(metadata['FrameTimesStart'])
+        concatenated_metadata['FrameReferenceTime'].extend(metadata['FrameReferenceTime'])
+        concatenated_metadata['FrameDuration'].extend(scan_timing_obj.duration.tolist())
+        concatenated_metadata['FrameEnds'].extend(scan_timing_obj.end.tolist())
+        decay = np.concatenate([decay, scan_timing_obj.decay])
+        img_arr = img.numpy()
+        if img_arr.ndim == 3:
+            img_arr = img_arr[..., np.newaxis]
+        arrs_to_concatenate.append(img_arr)
 
-        undo_decay_correction(input_image_path=additional_image_path,
-                              output_image_path=new_path,
-                              metadata_dict=metadata)
+    concatenated_metadata['DecayCorrectionFactor'] = decay.tolist()
 
-        corrected_image_path = new_path.replace("desc-nodecaycorrect", "desc-decayredone")
-        corrected_image = decay_correct(input_image_path=new_path,
-                                        output_image_path=corrected_image_path)
+    concatenated_arr = np.concatenate(arrs_to_concatenate, axis=3)
+    concatenated_img = ants.from_numpy_like(data=concatenated_arr,
+                                            image=initial_img)
 
-        corrected_arrays.append(corrected_image.numpy())
-        updated_metadata = image_io.load_metadata_for_nifti_with_same_filename(image_path=corrected_image_path)
-        new_metadata['FrameTimesStart'].extend(updated_metadata['FrameTimesStart'])
-        new_metadata['FrameReferenceTime'].extend(updated_metadata['FrameReferenceTime'])
-        new_metadata['FrameDuration'].extend(updated_metadata['FrameDuration'])
-        new_metadata['DecayFactor'].extend(updated_metadata['DecayFactor'])
-        new_metadata['ImageDecayCorrected'] = updated_metadata['ImageDecayCorrected']
-        new_metadata['ImageDecayCorrectionTime'] = updated_metadata['ImageDecayCorrectionTime']
+    uncorrected_img, uncorrected_metadata = undo_decay_correction(input_image=concatenated_img,
+                                                                  metadata_dict=concatenated_metadata)
 
-    stitched_image_array = np.concatenate(corrected_arrays, axis=3)
-
-    stitched_image = ants.from_numpy(data=stitched_image_array,
-                                     origin=initial_img.origin,
-                                     spacing=initial_img.spacing,
-                                     direction=initial_img.direction)
+    corrected_img, corrected_metadata = decay_correct(input_image=uncorrected_img,
+                                                      metadata_dict=uncorrected_metadata)
 
     if output_image_path is not None:
-        ants.image_write(image=stitched_image,
+        ants.image_write(image=corrected_img,
                          filename=output_image_path)
-        image_io.write_dict_to_json(meta_data_dict=new_metadata,
+        image_io.write_dict_to_json(meta_data_dict=corrected_metadata,
                                     out_path=image_io.gen_meta_data_filepath_for_nifti(nifty_path=output_image_path))
 
-    return stitched_image
+    return corrected_img
 
 
 def crop_image(input_image_path: str,
