@@ -79,7 +79,7 @@ class TimeActivityCurve:
             self.uncertainty[:] = np.nan
         assert np.shape(self.uncertainty) == np.shape(self.times) == np.shape(self.activity), (
             f"TAC fields must have the same shapes.\ntimes:{self.times.shape}"
-            "activity:{self.activity.shape} uncertainty:{self.uncertainty.shape}")
+            f"activity:{self.activity.shape} uncertainty:{self.uncertainty.shape}")
 
     @classmethod
     def from_tsv(cls, filename: str):
