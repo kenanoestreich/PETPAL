@@ -9,6 +9,7 @@ from scipy.interpolate import interp1d
 import ants
 
 from . import image_io, math_lib, scan_timing
+from .image_io import gen_meta_data_filepath_for_nifti
 
 FULL_NAME = [
     'Background',
@@ -201,8 +202,13 @@ def weighted_series_sum(input_image_4d_path: str,
         nibabel.save(pet_sum_image, out_image_path)
         if verbose:
             print(f"(ImageOps4d): weighted sum image saved to {out_image_path}")
-        image_io.safe_copy_meta(input_image_path=input_image_4d_path,
-                                out_image_path=out_image_path)
+        metadata = image_io.safe_load_meta(gen_meta_data_filepath_for_nifti(input_image_4d_path))
+        metadata['FrameTimesStart'] = start_time
+        metadata['FrameDuration'] = sum(frame_duration_adjusted)
+        metadata['FrameReferenceTime'] = ((frame_start_adjusted[0] + frame_start_adjusted[-1]+frame_duration_adjusted[-1])/2)
+
+        image_io.write_dict_to_json(meta_data_dict=metadata,
+                                    out_path=gen_meta_data_filepath_for_nifti(out_image_path))
 
     return image_weighted_sum
 
