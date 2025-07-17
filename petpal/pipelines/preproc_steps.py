@@ -38,6 +38,7 @@ class TACsFromSegmentationStep(FunctionBasedStep):
                  segmentation_label_map_path: str,
                  out_tacs_dir: str,
                  out_tacs_prefix: str,
+                 name: str = 'write_roi_tacs',
                  verbose=False) -> None:
         """
         Initializes a TACsFromSegmentationStep with specified parameters.
@@ -50,7 +51,7 @@ class TACsFromSegmentationStep(FunctionBasedStep):
             out_tacs_prefix (str): Prefix for the output TACs.
             verbose (bool): Verbosity flag, default is False.
         """
-        super().__init__(name='write_roi_tacs', function=write_tacs, input_image_path=input_image_path,
+        super().__init__(name=name, function=write_tacs, input_image_path=input_image_path,
                          segmentation_image_path=segmentation_image_path, label_map_path=segmentation_label_map_path,
                          out_tac_dir=out_tacs_dir, out_tac_prefix=out_tacs_prefix,
                          verbose=verbose, )
