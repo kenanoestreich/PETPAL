@@ -205,7 +205,7 @@ def weighted_series_sum(input_image_4d_path: str,
         metadata = image_io.safe_load_meta(gen_meta_data_filepath_for_nifti(input_image_4d_path))
         metadata['FrameTimesStart'] = [start_time]
         metadata['FrameDuration'] = [sum(frame_duration_adjusted)]
-        metadata['FrameReferenceTime'] = [((frame_start_adjusted[0] + frame_start_adjusted[-1]+frame_duration_adjusted[-1])/2)]
+        metadata['FrameReferenceTime'] = [((frame_start_adjusted[-1]+frame_duration_adjusted[-1] - frame_start_adjusted[0] )/2)]
 
         image_io.write_dict_to_json(meta_data_dict=metadata,
                                     out_path=gen_meta_data_filepath_for_nifti(out_image_path))
