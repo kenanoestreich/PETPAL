@@ -1,4 +1,6 @@
 from typing import Union
+import warnings
+
 from .steps_base import *
 from ..kinetic_modeling import parametric_images
 from ..kinetic_modeling import tac_fitting
@@ -293,6 +295,7 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
                  output_directory: str,
                  output_prefix: str,
                  method: str,
+                 name: str | None = None,
                  fit_threshold_in_mins: float = 30.0):
         """
         Initializes the GraphicalAnalysisStep with specified parameters.
@@ -306,11 +309,12 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
             fit_threshold_in_mins (float, optional): Threshold in minutes for fitting. Defaults to 30.0.
             
         """
+        step_name = f'roi_{method}_fit' if name is None else name
         TACAnalysisStepMixin.__init__(self, input_tac_path=input_tac_path, roi_tacs_dir=roi_tacs_dir,
                                       output_directory=output_directory, output_prefix=output_prefix,
                                       is_ref_tac_based_model=False, method=method,
                                       fit_thresh_in_mins=fit_threshold_in_mins)
-        ObjectBasedStep.__init__(self, name=f'roi_{method}_fit', class_type=pet_grph.MultiTACGraphicalAnalysis,
+        ObjectBasedStep.__init__(self, name=step_name, class_type=pet_grph.MultiTACGraphicalAnalysis,
                                  init_kwargs=self.init_kwargs, call_kwargs=dict())
     
     def __repr__(self):
@@ -347,7 +351,7 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
         return cls(input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='patlak', )
     
     @classmethod
-    def default_logan(cls):
+    def default_logan(cls, name : str = 'roi_logan_fit', **overrides):
         """
         Creates a default instance for Logan graphical analysis of ROI TACs in a directory using
         :class:`MultiTACGraphicalAnalysis<petpal.kinetic_modeling.graphical_analysis.MultiTACGraphicalAnalysis>`.
@@ -356,7 +360,13 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
         Returns:
             GraphicalAnalysisStep: A new instance for Logan graphical analysis.
         """
-        return cls(input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='logan', )
+        defaults = dict(name=name, input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='logan')
+        override_dict = defaults | overrides
+        try:
+            return cls(**override_dict)
+        except RuntimeError as err:
+            warnings.warn(f"Invalid override: {err}. Using default instance instead.", stacklevel=2)
+            return cls(**defaults)
     
     @classmethod
     def default_alt_logan(cls):
