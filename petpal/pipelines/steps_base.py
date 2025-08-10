@@ -99,7 +99,7 @@ class FunctionBasedStep(StepsAPI):
         func_sig (inspect.Signature): The signature of the function for validating arguments.
 
     """
-    def __init__(self, name: str, function: Callable, skip_step: bool = False, *args, **kwargs) -> None:
+    def __init__(self, name: str, function: Callable, *args, **kwargs) -> None:
         """
         Initializes a function-based step in the processing pipeline.
 
@@ -110,7 +110,7 @@ class FunctionBasedStep(StepsAPI):
             **kwargs: Keyword arguments to be passed to the function.
             
         """
-        StepsAPI.__init__(self, skip_step=skip_step)
+        StepsAPI.__init__(self, skip_step=False)
         self.name = name
         self.function = function
         self._func_name = function.__name__
