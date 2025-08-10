@@ -280,7 +280,7 @@ class ObjectBasedStep(StepsAPI):
         call_sig (inspect.Signature): The call signature of the class for validating arguments.
 
     """
-    def __init__(self, name: str, class_type: type, init_kwargs: dict, call_kwargs: dict) -> None:
+    def __init__(self, name: str, class_type: type, init_kwargs: dict, call_kwargs: dict, skip_step: bool = False) -> None:
         """
         Initializes an object-based step in the processing pipeline.
 
@@ -290,7 +290,7 @@ class ObjectBasedStep(StepsAPI):
             init_kwargs (dict): Keyword arguments for initializing the class.
             call_kwargs (dict): Keyword arguments for invoking the class.
         """
-        StepsAPI.__init__(self, skip_step=False)
+        StepsAPI.__init__(self, skip_step=skip_step)
         self.name: str = name
         self.class_type: type = class_type
         self.init_kwargs: ArgsDict = ArgsDict(init_kwargs)
