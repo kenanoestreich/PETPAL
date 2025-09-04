@@ -8,6 +8,7 @@ from scipy.ndimage import gaussian_filter
 import ants
 
 from ..utils.useful_functions import check_physical_space_for_ants_image_pair
+from ..utils.image_io import ImageIO
 from ..utils.scan_timing import ScanTimingInfo
 from ..utils.time_activity_curve import TimeActivityCurve
 from ..utils.bids_utils import gen_bids_like_filename, parse_path_to_get_subject_and_session_id
@@ -20,6 +21,7 @@ class Sgtm:
     def __init__(self,
                  input_image_path: str,
                  segmentation_image_path: str,
+                 segmentation_table_path: str,
                  fwhm: float | tuple[float, float, float],
                  zeroth_roi: bool = False):
         """
@@ -68,6 +70,7 @@ class Sgtm:
         self.input_image_path = input_image_path
         self.input_image = ants.image_read(input_image_path)
         self.segmentation_image = ants.image_read(segmentation_image_path)
+        self.label_map = ImageIO.read_label_map_tsv(label_map_file=segmentation_table_path)
         self.fwhm = fwhm
         self.zeroth_roi = zeroth_roi
         self.sgtm_result = None
@@ -167,7 +170,7 @@ class Sgtm:
         return voxel_by_roi_matrix.astype(np.float32)
 
 
-    def run_sgtm_3d(self) -> tuple[np.ndarray, np.ndarray, float]:
+    def run_sgtm_3d(self) -> tuple[np.ndarray, list[str], np.ndarray, float]:
         r"""
         Apply Symmetric Geometric Transfer Matrix (SGTM) method for Partial Volume Correction 
         (PVC) to PET images based on ROI labels.
@@ -220,6 +223,7 @@ class Sgtm:
         segmentation_arr = self.segmentation_image.numpy()
 
         unique_labels = self.unique_labels
+        region_labels = [self.label_map['abbreviation'][self.label_map['mapping']==i].values[0] for i in unique_labels]
 
         voxel_by_roi_matrix = Sgtm.get_voxel_by_roi_matrix(unique_labels=unique_labels,
                                                            segmentation_arr=segmentation_arr,
@@ -229,7 +233,7 @@ class Sgtm:
                                                         voxel_by_roi_matrix=voxel_by_roi_matrix,
                                                         input_numpy=input_numpy)
 
-        return unique_labels, t_corrected, condition_number
+        return unique_labels, region_labels, t_corrected, condition_number
 
 
     def run_sgtm_4d(self) -> np.ndarray:
@@ -278,10 +282,10 @@ class Sgtm:
             sgtm_result (tuple): Output of :meth:`run_sgtm`
             out_tsv_path (str): File path to which results are saved.
         """
-        sgtm_result_array = np.array([sgtm_result[0],sgtm_result[1]]).T
+        sgtm_result_array = np.array([sgtm_result[1],sgtm_result[2]]).T
         np.savetxt(out_tsv_path,sgtm_result_array,
                    header='Region\tMean',
-                   fmt=['%.0f','%.2f'],
+                   fmt=['%s','%.2f'],
                    comments='')
 
 
@@ -307,13 +311,14 @@ class Sgtm:
         for i, label in enumerate(self.unique_labels):
             pvc_tac = TimeActivityCurve(times=frame_timing.center_in_mins,
                                         activity=tac_array[i,:])
+            label_name = self.label_map['abbreviation'][self.label_map['mapping']==label].values[0]
             if sub_id=='XXXX' or ses_id=='XX':
-                tac_filename = f'seg-{label}_tac.tsv'
+                tac_filename = f'seg-{label_name}_tac.tsv'
             else:
                 tac_filename = gen_bids_like_filename(sub_id=sub_id,
                                                     ses_id=ses_id,
                                                     suffix='tac',
-                                                    seg=label,
+                                                    seg=label_name,
                                                     ext='.tsv')
             out_tac_path = os.path.join(out_tac_dir, tac_filename)
             pvc_tac.to_tsv(filename=out_tac_path)
