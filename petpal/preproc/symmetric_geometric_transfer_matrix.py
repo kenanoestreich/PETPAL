@@ -170,6 +170,17 @@ class Sgtm:
         return voxel_by_roi_matrix.astype(np.float32)
 
 
+    def get_names_for_labels(self,
+                             labels: np.ndarray) -> list[str]
+        """"""
+        names_list = []
+        for label in labels:
+            names_list.append(self.label_map['abbreviation'][self.label_map['mapping'==label]].values[0])
+        if len(names_list) != len(labels): 
+            raise AssertionError('Did not find a matching region names for all region labels. ' \
+            'Verify integrity of label map .tsv')
+        return names_list
+
     def run_sgtm_3d(self) -> tuple[np.ndarray, list[str], np.ndarray, float]:
         r"""
         Apply Symmetric Geometric Transfer Matrix (SGTM) method for Partial Volume Correction 
@@ -223,7 +234,7 @@ class Sgtm:
         segmentation_arr = self.segmentation_image.numpy()
 
         unique_labels = self.unique_labels
-        region_labels = [self.label_map['abbreviation'][self.label_map['mapping']==i].values[0] for i in unique_labels]
+        region_names = self.get_names_for_labels(unique_labels)
 
         voxel_by_roi_matrix = Sgtm.get_voxel_by_roi_matrix(unique_labels=unique_labels,
                                                            segmentation_arr=segmentation_arr,
@@ -233,7 +244,7 @@ class Sgtm:
                                                         voxel_by_roi_matrix=voxel_by_roi_matrix,
                                                         input_numpy=input_numpy)
 
-        return unique_labels, region_labels, t_corrected, condition_number
+        return unique_labels, region_names, t_corrected, condition_number
 
 
     def run_sgtm_4d(self) -> np.ndarray:

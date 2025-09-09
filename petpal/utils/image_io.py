@@ -350,6 +350,15 @@ class ImageIO:
         Static method to read a label map, translating region indices to region names,
         as a dictionary. Assumes tsv format.
 
+        Format of the file must be as follows (tab-separated): 
+
+        index   name    abbreviation    mapping
+        0   region_name region_abbr 19
+        1   different_name  different_abbr  8
+        ...
+
+        The file must contain those four headers in that order. 
+
         Args:
             label_map_file (str): Path to a json-formatted label map file.
 
@@ -358,7 +367,7 @@ class ImageIO:
                 abbreviations, and mappings.
 
         Raises:
-            FileNotFoundError: If the provided ctab file cannot be found in the directory.
+            FileNotFoundError: If the provided .tsv file cannot be found in the directory.
         """
         if not os.path.exists(label_map_file):
             raise FileNotFoundError(f"Image file {label_map_file} not found")
