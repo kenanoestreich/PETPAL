@@ -171,12 +171,12 @@ class Sgtm:
 
 
     def get_names_for_labels(self,
-                             labels: np.ndarray) -> list[str]
+                             labels: np.ndarray) -> list[str]:
         """"""
         names_list = []
         for label in labels:
             names_list.append(self.label_map['abbreviation'][self.label_map['mapping'==label]].values[0])
-        if len(names_list) != len(labels): 
+        if len(names_list) != len(labels):
             raise AssertionError('Did not find a matching region names for all region labels. ' \
             'Verify integrity of label map .tsv')
         return names_list
