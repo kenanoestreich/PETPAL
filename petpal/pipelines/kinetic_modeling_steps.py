@@ -347,7 +347,7 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
         return cls(input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='patlak', )
     
     @classmethod
-    def default_logan(cls):
+    def default_logan(cls, name : str = 'roi_logan_fit', **overrides):
         """
         Creates a default instance for Logan graphical analysis of ROI TACs in a directory using
         :class:`MultiTACGraphicalAnalysis<petpal.kinetic_modeling.graphical_analysis.MultiTACGraphicalAnalysis>`.
@@ -356,8 +356,14 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
         Returns:
             GraphicalAnalysisStep: A new instance for Logan graphical analysis.
         """
-        return cls(input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='logan', )
-    
+        defaults = dict(name=name, input_tac_path='', roi_tacs_dir='', output_directory='', output_prefix='', method='logan')
+        override_dict = defaults | overrides
+        try:
+            return cls(**override_dict)
+        except RuntimeError as err:
+            warnings.warn(f"Invalid override: {err}. Using default instance instead.", stacklevel=2)
+            return cls(**defaults)
+        
     @classmethod
     def default_alt_logan(cls):
         """
