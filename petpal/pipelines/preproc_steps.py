@@ -466,6 +466,7 @@ class ImageToImageStep(FunctionBasedStep):
                  function: Callable,
                  input_image_path: str,
                  output_image_path: str,
+                 copy_metadata: bool = True,
                  *args,
                  **kwargs) -> None:
         """
@@ -489,9 +490,10 @@ class ImageToImageStep(FunctionBasedStep):
         super().__init__(name, function, *(input_image_path, output_image_path, *args), **kwargs)
         self.input_image_path = copy.copy(self.args[0])
         self.output_image_path = copy.copy(self.args[1])
+        self.copy_metadata = copy_metadata
         self.args = self.args[2:]
     
-    def execute(self, copy_meta_file: bool = True) -> None:
+    def execute(self) -> None:
         """
         Executes the function and optionally copies meta-data information using
         :func:`safe_copy_meta<petpal.utils.image_io.safe_copy_meta>`.
@@ -506,7 +508,7 @@ class ImageToImageStep(FunctionBasedStep):
         """
         print(f"(Info): Executing {self.name}")
         self.function(self.input_image_path, self.output_image_path, *self.args, **self.kwargs)
-        if copy_meta_file:
+        if self.copy_metadata:
             safe_copy_meta(input_image_path=self.input_image_path, out_image_path=self.output_image_path)
         print(f"(Info): Finished {self.name}")
     
