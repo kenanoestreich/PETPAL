@@ -285,6 +285,7 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
         output_prefix (str): Prefix for the output files.
         method (str): Graphical analysis method.
         fit_threshold_in_mins (float): Threshold in minutes for fitting. Defaults to 30.0.
+        image_rescale (float): Scale for the image values. Defaults to 1.0 / 37000.0.
     """
     def __init__(self,
                  input_tac_path: str,
@@ -292,8 +293,8 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
                  output_directory: str,
                  output_prefix: str,
                  method: str,
-                 fit_threshold_in_mins: float = 30.0,
-                 **run_kwargs):
+                 name: str | None = None,
+                 fit_threshold_in_mins: float = 30.0):
         """
         Initializes the GraphicalAnalysisStep with specified parameters.
 
@@ -304,14 +305,15 @@ class GraphicalAnalysisStep(ObjectBasedStep, TACAnalysisStepMixin):
             output_prefix (str): Prefix for the output files.
             method (str): Graphical analysis method.
             fit_threshold_in_mins (float, optional): Threshold in minutes for fitting. Defaults to 30.0.
-            run_kwargs: Additional keyword arguments passed on to GraphicalAnalysis.__call__().
+            
         """
+        step_name = f'roi_{method}_fit' if name is None else name
         TACAnalysisStepMixin.__init__(self, input_tac_path=input_tac_path, roi_tacs_dir=roi_tacs_dir,
                                       output_directory=output_directory, output_prefix=output_prefix,
                                       is_ref_tac_based_model=False, method=method,
                                       fit_thresh_in_mins=fit_threshold_in_mins)
-        ObjectBasedStep.__init__(self, name=f'roi_{method}_fit', class_type=pet_grph.MultiTACGraphicalAnalysis,
-                                 init_kwargs=self.init_kwargs, call_kwargs=dict(**run_kwargs))
+        ObjectBasedStep.__init__(self, name=step_name, class_type=pet_grph.MultiTACGraphicalAnalysis,
+                                 init_kwargs=self.init_kwargs, call_kwargs=dict())
     
     def __repr__(self):
         """
